@@ -12,7 +12,7 @@ class PIDController():
         self.un_Max = un_Max
 
 
-    def forward(self, zbar, z, z_prev):
+    def forward(self, zbar, z):
         e_n = zbar - z
         # e_n = self.M_unmix@e_n
         P_n = self.Kp*e_n

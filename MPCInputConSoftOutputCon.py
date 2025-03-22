@@ -1,9 +1,7 @@
 import numpy as np
 from QPSolver import qpsolver
-from qpsolvers import solve_qp
 
-
-def LMPCcompute_inputcons_outputSoftCons(R, X0, D, U, Ad, Bd, Bd_d, Css, u_min, u_max, u_delta_min, u_delta_max, z_min, z_max, N, Q_cof, u_delta_cof, eta_cof1, eta_cof2):
+def MPCInputConSoftOutputCon(R, X0, D, U, Ad, Bd, Bd_d, Css, u_min, u_max, u_delta_min, u_delta_max, z_min, z_max, N, Q_cof, u_delta_cof, eta_cof1, eta_cof2):
     num_x = Ad.shape[0]
     num_u = Bd.shape[1]
     num_d = Bd_d.shape[1]

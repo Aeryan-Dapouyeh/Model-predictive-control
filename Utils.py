@@ -2,6 +2,7 @@ import numpy as np
 import control
 from control import tf, step_response
 from scipy.optimize import least_squares
+from scipy.linalg import expm
 from ModifiedFourTankSystem import stochasticModifiedFourtankSystem
 
 
@@ -108,85 +109,40 @@ def normal_steady_state(y, u, ys, us, index_step):
 
 
 def build_transfer_function(params):
-    """
-    Given a parameter vector [K, theta, tau1, tau2, tau3, tau4],
-    build the corresponding 4th-order TF with possible time delay.
-    
-    G(s) = K * exp(-theta s) / [(1 + tau1*s)(1 + tau2*s)(1 + tau3*s)(1 + tau4*s)]
-    """
+
     K, theta, tau1, tau2, tau3, tau4 = params
-    
-    # Create s as a symbolic variable for the transfer function
     s = tf('s')
-    
-    # Denominator = (1 + tau1*s)(1 + tau2*s)(1 + tau3*s)(1 + tau4*s)
     denom = (1 + tau1*s)*(1 + tau2*s)*(1 + tau3*s)*(1 + tau4*s)
-    
-    # Numerator = K * exp(-theta*s). 
-    # However, python-control typically handles time delay with e.g. Pade approximation.
-    # We'll handle the 'core' TF first (no delay) and add a Pade approximation for the delay:
     G_nodelay = K / denom
-    
-    # If you truly need the delay in your TF object, you can approximate it:
     if theta > 1e-8:
-        # Pade approximation of e^{-theta*s} (order=1 or 2 for simplicity)
-        # Higher-order Pade -> better approximation
         delay_approx = control.pade(theta, n=2)
         num_delay, den_delay = delay_approx
         G_delay = tf(num_delay, den_delay)
         G = G_delay * G_nodelay
     else:
-        # If delay is very small, skip or set it to zero
         G = G_nodelay
         
     return G
 
 def simulate_step_response(params, t):
-    """
-    Simulate the step response of the 4th-order TF defined by `params`
-    over the time array `t`.
-    
-    Returns the output array y_model (same length as t).
-    """
     G = build_transfer_function(params)
-    
-    # Python-control's step_response can take a custom time vector.
-    # step_response(G, T=t) returns (y, T_out)
     T_out, y_model = step_response(G, T=t)
     
     return y_model
 
 def objective_function(params, t, y_data):
-    """
-    Objective function for least-squares fitting:
-    
-    We want to minimize [y_model(t) - y_data(t)] over time.
-    """
     y_model = simulate_step_response(params, t)
     return y_model - y_data
 
 def fit_fourth_order_tf(t, NormalizedY, tankIndex):
-    """
-    Main function to:
-      - Extract y_data for the 4th tank
-      - Fit a 4th-order TF
-      - Return the best-fit parameters
-    """
-    # 4th tank is index=3 (zero-based), so:
+
     y_data = NormalizedY[:, tankIndex]
     
-    # Initial guess for parameters [K, theta, tau1, tau2, tau3, tau4].
-    # - K ~ 1.0 if truly normalized
-    # - theta ~ 0 if we suspect no big delay
-    # - tau_i > 0. Let's guess something small or moderate.
-    p0 = [1.0, 0.5, 5.0, 5.0, 5.0, 5.0]  # adjust as needed
-    
-    # Bounds: ensure all tau_i > 0, theta >= 0, K>0 etc.
-    # (lower bounds, upper bounds)
+    p0 = [1.0, 0.5, 5.0, 5.0, 5.0, 5.0]  
+
     lb = [0.9999, 1e-5, 1e-5, 1e-5, 1e-5, 1e-5]
     ub = [1.0001, 1e6, 1e6, 1e6, 1e6, 1e6]
-    
-    # Run least squares
+
     result = least_squares(
         fun=objective_function,
         x0=p0,
@@ -196,6 +152,33 @@ def fit_fourth_order_tf(t, NormalizedY, tankIndex):
         max_nfev=50
     )
     
-    best_params = result.x  # [K, theta, tau1, tau2, tau3, tau4]
+    best_params = result.x 
     return best_params
+
+def c2d_zoh(A, B, C, D, Ts):
+
+    Ad = expm(A * Ts)
+
+    I = np.eye(A.shape[0])
+
+    A_inv = np.linalg.inv(A)
+    Bd = A_inv @ (Ad - I) @ B
+    
+    Cd = C.copy()
+    Dd = D.copy()
+
+    return Ad, Bd, Cd, Dd
+
+def compute_markov_parameters(Ad, Bd, Cd, Dd, N):
+
+    H = [Dd]  
+    A_power = np.eye(Ad.shape[0]) 
+
+    for k in range(1, N+1):
+        A_power = A_power @ Ad 
+        H.append(Cd @ A_power @ Bd)
+
+    H = np.array(H)
+    
+    return H
 

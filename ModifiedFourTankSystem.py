@@ -74,6 +74,7 @@ class stochasticModifiedFourtankSystem():
             self.rho*(q_in[2] - q[2]),
             self.rho*(q_in[3] - q[3]) 
         ])
+
         xdot = np.array(driftTerm[:, 0] + d)
 
         return xdot
@@ -146,6 +147,10 @@ class stochasticModifiedFourtankSystem():
         Ass = np.array(Ass.tolist(), dtype=float)
         Bss = np.array(Bss.tolist(), dtype=float)
         Bdss = np.array(Bdss.tolist(), dtype=float)
+        Css = np.array(Css.tolist(), dtype=float)
+        Czss = np.array(Czss.tolist(), dtype=float)
+        Dss = np.array(Dss.tolist(), dtype=float)
+        Dzss = np.array(Dzss.tolist(), dtype=float)
 
 
         return Ass, Bss, Bdss, Css, Czss, Dss, Dzss

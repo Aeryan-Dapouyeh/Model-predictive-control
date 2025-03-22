@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from scipy.optimize import fsolve
 from c2dzoh import c2dzoh
 from control import dlqe
-from MPCInputConSoftOutputCon import MPCInputConSoftOutputCon
+from MPCInputCon import InputConstraindMPC
 from ModifiedFourTankSystem import stochasticModifiedFourtankSystem
 
 np.random.seed(42)
@@ -51,13 +51,6 @@ symbolic_y = FTS.symbolic_y(x)
 
 Ass, Bss, Bdss, Css, Czss, Dss, Dzss = FTS.ss_matrices(x, u, d, xs, us, ds)
 
-Ass = np.array(Ass).astype(float)
-Bss = np.array(Bss).astype(float)
-Bdss = np.array(Bdss).astype(float)
-Css = np.array(Css).astype(float)
-Czss = np.array(Czss).astype(float)
-Dss = np.array(Dss).astype(float)
-Dzss = np.array(Dzss).astype(float)
 
 Ts = 4
 Ad, Bd = c2dzoh(Ass, Bss, Ts)
@@ -87,15 +80,13 @@ G_w = np.block([
 L_kalman, P_kalman, E_kalman = dlqe(Ad_kalman,G_w,Cdy_kalman,W_kalman,Vy_kalman)
 
 
-
-
-# The input constrained MPC with soft output constraints experiment starts...
+# The input constrained MPC experiment starts...
 
 # -------------------------------------------------------------------------
 # Initialization of parameters
 # -------------------------------------------------------------------------
 t0 = 0.0          # Initial time
-t_final = 80 * 40 # Final time
+t_final = 80 * 20 # Final time
 t = np.arange(t0, t_final + Ts, Ts)
 N = len(t)
 
@@ -136,65 +127,66 @@ d[0, disturbance_step:] = 100.0
 
 dw = d + w 
 
-# Define constants
+# -------------------------------------------------------------------------
+# MPC parameters
+# -------------------------------------------------------------------------
+
+N_horizon = 50
+u_min = 1.0
+u_max = 80.0
+u_delta_min = -70.0
+u_delta_max = 70.0
+u_bounds = (u_min, u_max)
+u_delta_bounds = (u_delta_min, u_delta_max)
+
 xdim = 4
 udim = 2
 ddim = 2
 ydim = 4
 zdim = 2
-num_eta = ydim
-zbar = 30.0
-N_horizon = 50
-u_min = 0.0
-u_max = 300.0
-u_delta_min = -40.0
-u_delta_max = 40.0
 
-z_min = np.array([-1000, -1000, -1000, -1000])
-z_min_error = np.array([zbar - 10, zbar - 10, -1000, -1000])
-z_min_safe = np.array([0, 0, 0, 0])
-z_max = np.array([zbar + 10, zbar + 10, zbar + 1000, zbar + 1000])
-
-# Initialize matrices
-N = 500
 x = np.zeros((xdim, N))
 y = np.zeros((ydim, N))
 z = np.zeros((zdim, N))
 u = np.zeros((udim, N))
+
 x_bar = np.zeros((xdim, N))
 d_bar = np.zeros((ddim, N))
 y_bar = np.zeros((ydim, N))
+zbar = 10
 
-d0 = ds[2:]
-y0 = ys
+d0 = np.zeros((2, 1))
+y0 = np.zeros((4, 1))
 
-x[:, 0] = x0.flatten()
-x_bar[:, 0] = x0.flatten()
-d_bar[:, 0] = d0.flatten()
-y_bar[:, 0] = y0.flatten()
-xk = x_bar[:, 0]
+x[:, 0]      = x0.flatten()
+x_bar[:, 0]  = x0.flatten()
+d_bar[:, 0]  = d0.flatten()
+y_bar[:, 0]  = y0.flatten()
 
-rk = zbar * np.ones((N_horizon * ydim, 1))
-dk = d_bar[:, 0]
-uk = np.zeros((udim, 1))
-us = np.zeros((udim,))
-sk = np.tile(us[0], (N_horizon * udim, 1))
+xk = x0.copy()
+dk = d0.copy()
 
-Q_cof = 0.03
-u_delta_cof = 10
-eta_cof1 = 10
-eta_cof2 = 10
-z_flag = 0
+# Reference for z1, z2:
+rk = zbar * np.ones((N_horizon * zdim, 1)) 
 
-# Simulation loop
-for k in range(N - 1):
+uk = np.zeros((udim, 1))  # current input
+usk = np.tile(us[0], (N_horizon * udim, 1))
+
+Q_cof = 0.05
+u_delta_cof = 20.0 
+
+
+for k in range(N - 1): # range(N - 1):
     # ---------------------------------------------------------------------
     # 1) Sensor feedback
     _xk = xk.reshape(-1, 1)
     _uk = uk.reshape(-1, 1)
-    yk = Css @ _xk + Dss @ _uk + v_low[:, [k]]
+    # yk = Css @ _xk + Dss @ _uk + v_low[:, [k]]
+    yk = FTS.y(xk)
+    yk = np.array([yk]).T
     yk_no_noise = Css @ _xk + Dss @ _uk
-    zk = yk_no_noise[0:zdim, :] 
+    zk = FTS.z(xk)
+    zk = np.array([zk]).T
 
     # ---------------------------------------------------------------------
     # 2) Kalman observer update (Static Kalman example)
@@ -210,41 +202,66 @@ for k in range(N - 1):
     xk = x_kalman[0:xdim, :]
     dk = x_kalman[xdim:xdim + ddim, :]
 
-    if yk[1] > (z_min_error[1] - 5):
-        z_min = z_min_error
-        z_flag = 1
-    else:
-        z_min = z_min_safe
-
-    if z_flag == 1:
-        z_min = z_min_error
-
     # ---------------------------------------------------------------------
     # 3) MPC controller
     # ---------------------------------------------------------------------
-    uk = MPCInputConSoftOutputCon(
-        rk, xk, dk, uk, Ad, Bd, Bd_d, Css, u_min, u_max, u_delta_min, u_delta_max, 
-        z_min, z_max, N_horizon, Q_cof, u_delta_cof, eta_cof1, eta_cof2
-    )
-    # State update
-    xk = Ad @ x[:, k] + Bd @ uk + Bd_d @ d[:, k] + Gw_d @ w[:, k]
-    x[:, k + 1] = xk.flatten()
+    uk_new = InputConstraindMPC(rk, xk, uk, dk, ss_matrices, u_bounds, u_delta_bounds, Q_cof, u_delta_cof, N_horizon)
+
+    # Update the current state
+    uk = uk_new.copy()
+    uk = np.array([uk]).T
+
+    # ---------------------------------------------------------------------
+    # 4) State update
+    # ---------------------------------------------------------------------
+    x_old = x[:, [k]]
+    _uk = uk.reshape(-1, 1)
+    _d_k = d[:, [k]]
+    _w_k = w[:, [k]]
+
+    if(dk.shape[0]==2):
+        dk = np.array([0, 0, dk.flatten()[0], dk.flatten()[1]])
+
+    xdot = FTS.xdot(xk.flatten(), uk.flatten(), dk.flatten())
+    xdot = np.array([xdot]).T
+    x_next = xk+xdot
+    # x_next = Ad @ x_old + Bd @ _uk + Bd_d @ _d_k + Gw_d @ _w_k
+    x[:, k+1] = x_next.flatten()
+    xk = x_next 
+
+    # IMPORTANT: For avoiding errors I got for having sp matrices
+    yk = np.array(yk).astype(float)
+    zk = np.array(zk).astype(float)
+    x_kalman = np.array(x_kalman).astype(float)
+    Y_bar = np.array(Y_bar).astype(float)
+
     y[:, k] = yk.flatten()
     z[:, k] = zk.flatten()
-    u[:, k + 1] = uk.flatten()
-    x_bar[:, k + 1] = x_kalman[:xdim, 0]
-    d_bar[:, k + 1] = x_kalman[xdim:, 0]
-    y_bar[:, k + 1] = Y_bar.flatten()
+    u[:, k+1] = uk.flatten()
+
+    # Update observer states (for the next iteration)
+    x_bar[:, k+1] = x_kalman[0:xdim, :].flatten()
+    d_bar[:, k+1] = x_kalman[xdim:xdim + ddim, :].flatten()
+    y_bar[:, k+1] = Y_bar.flatten()
 
     print(f"{k}/{N-1}")
 
-# Final step
-k = N - 1
-yk = Css @ x[:, k] + Dss @ uk + v_low[:, k]
-yk_no_noise = Css @ xk + Dss @ uk
-zk = yk_no_noise[:2]
-y[:, k] = yk.flatten()
-z[:, k] = zk.flatten()
+
+k_final = N - 1
+x_final = x[:, [k_final]]
+uk_final = u[:, [k_final]]
+
+yk_final = Css @ x_final + Dss @ uk_final + v_low[:, [k_final]]
+yk_no_noise_final = Css @ x_final + Dss @ uk_final
+zk_final = yk_no_noise_final[0:zdim, :]
+
+yk_final = np.array(yk_final).astype(float)
+zk_final = np.array(zk_final).astype(float)
+ 
+
+y[:, k_final] = yk_final.flatten()
+z[:, k_final] = zk_final.flatten()
+
 
 
 fig, axs = plt.subplots(1, 4, figsize=(12, 4))
@@ -295,6 +312,7 @@ axs[3].legend()
 
 plt.tight_layout()
 plt.show()
+
 
 
 

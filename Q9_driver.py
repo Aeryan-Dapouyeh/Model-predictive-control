@@ -31,7 +31,7 @@ ds = np.array([0, 0, F3, F4])
 xs0 = np.ones(4)*1000
 
 
-R_vv = np.eye(4)*0.1
+R_vv = np.eye(4)*1
 FTS = stochasticModifiedFourtankSystem(p, xs0, R_vv, noiseType="White_Gaussian")  
 
 xs = fsolve(lambda xs: FTS.xdot(x=xs, u=us, d=ds, dt=1), xs0)
@@ -52,7 +52,7 @@ symbolic_y = FTS.symbolic_y(x)
 Ass, Bss, Bdss, Css, Czss, Dss, Dzss = FTS.ss_matrices(x, u, d, xs, us, ds)
 
 
-Ts = 4 # Sample time
+Ts = 4
 Ad, Bd = c2dzoh(Ass, Bss, Ts)
 Ad, Bd_d = c2dzoh(Ass, Bdss, Ts)
 Gw_d = Bd_d
@@ -132,8 +132,8 @@ dw = d + w
 # -------------------------------------------------------------------------
 
 N_horizon = 30
-u_min = 0.0
-u_max = 30.0
+u_min = 1.0
+u_max = 8.0
 u_delta_min = -70.0
 u_delta_max = 70.0
 u_bounds = (u_min, u_max)
@@ -279,6 +279,8 @@ axs[1].legend()
 # Noise
 axs[2].plot(z[0, :], label='z1')
 axs[2].plot(z[1, :], label='z2')
+axs[2].plot(range(z.shape[1]), [zbar] * z.shape[1], label='z1 bar - set point', linestyle='--', color='blue')
+axs[2].plot(range(z.shape[1]), [zbar] * z.shape[1], label='z2 bar - set point', linestyle='--', color='red')
 axs[2].set_title("Controlled variables")
 axs[2].set_xlabel("Timesteps(dt=1)")       
 axs[2].set_ylabel("Levels(cm3)")   
@@ -287,6 +289,8 @@ axs[2].legend()
 
 axs[3].plot(u[0, :], label='u1')
 axs[3].plot(u[1, :], label='u2')
+axs[3].plot(range(z.shape[1]), [u_min] * z.shape[1], label='u_min', linestyle='--', color='blue')
+axs[3].plot(range(z.shape[1]), [u_max] * z.shape[1], label='u_max', linestyle='--', color='red')
 axs[3].set_title("Manipulated variables")
 axs[3].set_xlabel("Timesteps(dt=1)")       
 axs[3].set_ylabel("Flow(cm^3)")   

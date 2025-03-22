@@ -192,9 +192,13 @@ for k in range(N - 1):
     # 1) Sensor feedback
     _xk = xk.reshape(-1, 1)
     _uk = uk.reshape(-1, 1)
-    yk = Css @ _xk + Dss @ _uk + v_low[:, [k]]
+    # yk = Css @ _xk + Dss @ _uk + v_low[:, [k]]
+    yk = FTS.y(xk)
+    yk = np.array([yk]).T
     yk_no_noise = Css @ _xk + Dss @ _uk
-    zk = yk_no_noise[0:zdim, :] 
+    # zk = yk_no_noise[0:zdim, :] 
+    zk = FTS.z(xk)
+    zk = np.array([zk]).T
 
     # ---------------------------------------------------------------------
     # 2) Kalman observer update (Static Kalman example)
@@ -227,7 +231,11 @@ for k in range(N - 1):
         z_min, z_max, N_horizon, Q_cof, u_delta_cof, eta_cof1, eta_cof2
     )
     # State update
-    xk = Ad @ x[:, k] + Bd @ uk + Bd_d @ d[:, k] + Gw_d @ w[:, k]
+    xdot = FTS.xdot(xk, uk, dk)[0]
+    xdot = np.array([xdot]).T
+    x_next = xk+xdot
+    x_k = x_next
+    # xk = Ad @ x[:, k] + Bd @ uk + Bd_d @ d[:, k] + Gw_d @ w[:, k]
     x[:, k + 1] = xk.flatten()
     y[:, k] = yk.flatten()
     z[:, k] = zk.flatten()
@@ -240,9 +248,12 @@ for k in range(N - 1):
 
 # Final step
 k = N - 1
-yk = Css @ x[:, k] + Dss @ uk + v_low[:, k]
+yk = FTS.y(xk)
+yk = np.array([yk]).T
 yk_no_noise = Css @ xk + Dss @ uk
-zk = yk_no_noise[:2]
+
+zk = FTS.z(xk)
+zk = np.array([zk]).T
 y[:, k] = yk.flatten()
 z[:, k] = zk.flatten()
 
